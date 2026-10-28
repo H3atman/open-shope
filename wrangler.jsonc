@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "open-shope",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./public",
+    "run_worker_first": ["/api/*"],
+    "not_found_handling": "single-page-application"
+  },
+  // No IDs or names: wrangler auto-provisions a D1 database and an R2 bucket per deployment.
+  "d1_databases": [{ "binding": "DB" }],
+  "r2_buckets": [{ "binding": "MEDIA" }],
+  "secrets": { "required": ["BETTER_AUTH_SECRET"] }
+}

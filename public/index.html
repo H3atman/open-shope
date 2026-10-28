@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>open-shope</title>
+  </head>
+  <body>
+    <main>
+      <h1>open-shope</h1>
+      <p id="message">Loading…</p>
+      <form id="setup" hidden>
+        <p><label>Name <input name="name" required autocomplete="name" /></label></p>
+        <p><label>Email <input name="email" type="email" required autocomplete="email" /></label></p>
+        <p>
+          <label>Password
+            <input name="password" type="password" minlength="8" maxlength="128" required autocomplete="new-password" />
+          </label>
+        </p>
+        <button>Create owner account</button>
+      </form>
+    </main>
+    <script>
+      const message = document.getElementById("message");
+      const form = document.getElementById("setup");
+
+      // Shows the owner form only while the shop has no owner.
+      async function load() {
+        const { needsSetup } = await (await fetch("/api/setup")).json();
+        message.textContent = needsSetup ? "Create the shop owner account." : "Shop is set up";
+        form.hidden = !needsSetup;
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const res = await fetch("/api/setup", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(Object.fromEntries(new FormData(form))),
+        });
+        if (res.ok) return load();
+        const { error } = await res.json().catch(() => ({}));
+        message.textContent = error ?? `Setup failed (${res.status})`;
+      });
+
+      load();
+    </script>
+  </body>
+</html>

@@ -68,7 +68,7 @@ Legend: plain bullets are **sourced facts**, each with a link. Lines marked **In
   - Deploying does not apply them ([D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/)).
 - **Caveat:** even Cloudflare's own `d1-template` README still asks users to create the DB, edit config, apply migrations and deploy ([d1-template](https://github.com/cloudflare/templates/blob/main/d1-template/README.md)).
 - **Inference:**
-  - Make the deploy command `wrangler d1 migrations apply DB --remote && wrangler deploy`.
+  - Make the deploy command `wrangler deploy && wrangler d1 migrations apply DB --remote`. **Corrected 2026-10-28:** deploy must come first, because it auto-provisions the database and `migrations apply` cannot create one (§15).
   - Seed the first admin through a first-run setup screen, not a CLI step.
   - **Validate the whole button flow in a throwaway spike before building features.** This is the riskiest promise in the project.
 
@@ -674,4 +674,35 @@ returns(id, order_id, status, solution, reason, note, refund_minor, created_at)
 - **Cloudflare:**
   - Whether the Deploy button prompts for secrets.
   - Whether image transformations work on `workers.dev` only.
-- **Auth:** Better Auth's current Workers/D1 compatibility.
+- **Auth:** Better Auth's current Workers/D1 compatibility. Works in local workerd with 1.7.14 (§15); not yet seen deployed.
+
+---
+
+## 15. Deploy spike findings (checked 2026-10-28)
+
+Spike: issue #1. Versions: wrangler 4.154.0, workerd 1.20261023.1, Better Auth 1.7.14, Hono 4.13.14.
+
+**Read in the installed code, and seen in local runs:**
+- **Resource names:** Wrangler names an auto-provisioned resource `<worker name>-<binding, lowercased>`, so `open-shope-db` and `open-shope-media` (`autoProvisionedResourceName` in wrangler's `cli.js`).
+  - `wrangler d1 migrations apply DB --remote` with no `database_id` looks the database up by that same name. So `wrangler deploy && wrangler d1 migrations apply DB --remote` holds together, but only in that order.
+  - If the deployer renames the Worker, both names follow the new Worker name.
+- **`secrets.required`** is in the wrangler config schema. It replaces `.dev.vars`/`.env` inference in `wrangler types`. In local dev, a missing secret only causes a warning.
+- **PBKDF2 cap:** local workerd accepted 100,001 and 600,000 iterations. The binary does contain an "iteration counts above … are not supported" error, so the 100,000 cap may apply only on Cloudflare's edge. We chose **100,000** iterations; each stored hash records its count.
+- **Better Auth rate limit:**
+  - Defaults are 100 requests per 10 s, and **3 per 10 s** for `/sign-in*`, `/sign-up*`, `/change-password*` and `/change-email*`. Every allowed request restarts the window. Storage is in memory, per isolate.
+  - It is **on only when `NODE_ENV=production`**, which Workers don't set. Six rapid local sign-ins all returned 200.
+  - **Inference:** it is off on deployed shops too. Don't count on it for brute-force protection.
+- **Better Auth Origin check:** sign-in and sign-up without a cookie only validate `Origin` when an `Origin`, `Referer` or `Sec-Fetch-*` header is present. With a cookie, `Origin` is required and must be trusted. The request's own origin is trusted, because we pass it as `baseURL`.
+- **Sign-in latency, local:** 38–59 ms wall clock per sign-in at 100,000 iterations. This is not Workers CPU time.
+
+**Pending: a human must click the Deploy button and report:**
+- the resource names it actually created;
+- whether R2 needs a dashboard opt-in on a fresh account;
+- whether the form prompts for `BETTER_AUTH_SECRET`;
+- whether the button flow runs the `deploy` script, and so the migrations;
+- sign-in CPU per request (from `wrangler tail` or the dashboard), and whether 100,000 iterations stays under 10 ms. Run `BASE_URL=https://<shop> bun run test:e2e` **after** creating the owner. It records status and latency for 20 sign-ins in `e2e/artifacts/`.
+
+**Known risk: setup can be claimed by a stranger.** Whoever opens a fresh deployment first becomes the owner. Mitigation options (not built):
+- A `SETUP_TOKEN` secret, set at deploy, that the setup form requires.
+- An `OWNER_EMAIL` secret: only that email can complete setup.
+- Put Cloudflare Access in front of `/api/setup` until setup is done (needs a zone, §1.7).
