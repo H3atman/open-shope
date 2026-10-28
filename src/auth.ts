@@ -1,9 +1,23 @@
 import { betterAuth } from "better-auth";
 import { hashPassword, verifyPassword } from "./password";
 
-// Builds Better Auth for one request. baseURL is the request's origin, so the shop works on
-// workers.dev and on a custom domain without config.
-export function createAuth(env: Env, baseURL: string) {
+type Auth = ReturnType<typeof createAuth>;
+
+// Reuse Better Auth per origin to avoid rebuilding it on every request in an isolate.
+const authByOrigin = new Map<string, Auth>();
+
+// Resolves auth for workers.dev, custom domains and preview origins.
+export function getAuth(env: Env, baseURL: string): Auth {
+  let auth = authByOrigin.get(baseURL);
+  if (!auth) {
+    auth = createAuth(env, baseURL);
+    authByOrigin.set(baseURL, auth);
+  }
+  return auth;
+}
+
+// Builds the auth instance with this deployment's bindings and secret.
+function createAuth(env: Env, baseURL: string) {
   return betterAuth({
     baseURL,
     secret: env.BETTER_AUTH_SECRET,

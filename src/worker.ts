@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { createAuth } from "./auth";
+import { getAuth } from "./auth";
 import { setup } from "./setup";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -19,7 +19,7 @@ app.get("/api/health", async (c) => {
 
 app.route("/api/setup", setup);
 
-app.all("/api/auth/*", (c) => createAuth(c.env, new URL(c.req.url).origin).handler(c.req.raw));
+app.all("/api/auth/*", (c) => getAuth(c.env, new URL(c.req.url).origin).handler(c.req.raw));
 
 // Only /api/* reaches the Worker; everything else is a static asset or the SPA's index.html.
 app.notFound((c) => c.json({ error: "Not found" }, 404));

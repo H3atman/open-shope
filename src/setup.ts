@@ -1,20 +1,6 @@
+import { APIError, isAPIError } from "better-auth/api";
 import { Hono } from "hono";
-import { createAuth } from "./auth";
-
-type Owner = { name: string; email: string; password: string };
-
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// Returns the owner's sign-up fields, or null when any is missing or invalid.
-// Password bounds match Better Auth's defaults (8 to 128), so sign-up can't reject them later.
-function parseOwner(body: unknown): Owner | null {
-  if (typeof body !== "object" || body === null) return null;
-  const { name, email, password } = body as Record<string, unknown>;
-  if (typeof name !== "string" || !name.trim()) return null;
-  if (typeof email !== "string" || !EMAIL.test(email)) return null;
-  if (typeof password !== "string" || password.length < 8 || password.length > 128) return null;
-  return { name: name.trim(), email, password };
-}
+import { getAuth } from "./auth";
 
 // First-run setup, mounted at /api/setup.
 export const setup = new Hono<{ Bindings: Env }>();
@@ -28,9 +14,6 @@ setup.get("/", async (c) => {
 // Creates the owner once and signs them in. The 'setup' settings row is an atomic claim:
 // only the request whose INSERT changes a row may continue; everyone else gets 409.
 setup.post("/", async (c) => {
-  const owner = parseOwner(await c.req.json().catch(() => null));
-  if (!owner) return c.json({ error: "Name, a valid email and an 8 to 128 character password are required" }, 400);
-
   const claim = await c.env.DB
     .prepare(`INSERT INTO "settings" ("key", "value") VALUES ('setup', ?) ON CONFLICT DO NOTHING`)
     .bind(new Date().toISOString())
@@ -38,9 +21,12 @@ setup.post("/", async (c) => {
   if (claim.meta.changes === 0) return c.json({ error: "Setup is already done" }, 409);
 
   try {
-    const auth = createAuth(c.env, new URL(c.req.url).origin);
+    const auth = getAuth(c.env, new URL(c.req.url).origin);
+    const body = await c.req.json<{ name: string; email: string; password: string }>().catch(() => {
+      throw new APIError("BAD_REQUEST", { message: "Request body must be valid JSON" });
+    });
     const { headers, response } = await auth.api.signUpEmail({
-      body: owner,
+      body,
       headers: c.req.raw.headers,
       returnHeaders: true,
     });
@@ -49,6 +35,9 @@ setup.post("/", async (c) => {
     return c.json({ ok: true }, 201);
   } catch (error) {
     await c.env.DB.prepare(`DELETE FROM "settings" WHERE "key" = 'setup'`).run();
+    if (isAPIError(error)) {
+      return Response.json({ error: error.message }, { status: error.statusCode });
+    }
     throw error;
   }
 });

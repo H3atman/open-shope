@@ -687,20 +687,42 @@ Spike: issue #1. Versions: wrangler 4.154.0, workerd 1.20261023.1, Better Auth 1
   - `wrangler d1 migrations apply DB --remote` with no `database_id` looks the database up by that same name. So `wrangler deploy && wrangler d1 migrations apply DB --remote` holds together, but only in that order.
   - If the deployer renames the Worker, both names follow the new Worker name.
 - **`secrets.required`** is in the wrangler config schema. It replaces `.dev.vars`/`.env` inference in `wrangler types`. In local dev, a missing secret only causes a warning.
-- **PBKDF2 cap:** local workerd accepted 100,001 and 600,000 iterations. The binary does contain an "iteration counts above … are not supported" error, so the 100,000 cap may apply only on Cloudflare's edge. We chose **100,000** iterations; each stored hash records its count.
-- **Better Auth rate limit:**
+- **PBKDF2 cap:** local workerd accepted 100,001 and 600,000 iterations. The binary does contain an "iteration counts above … are not supported" error, so the 100,000 cap may apply only on Cloudflare's edge. We chose **100,000** iterations; each stored hash records its count. **100,000 works on the deployed edge**; more than 100,000 has not been tried there.
+- **Better Auth rate limit:** follow-up [#2](https://github.com/H3atman/open-shope/issues/2).
   - Defaults are 100 requests per 10 s, and **3 per 10 s** for `/sign-in*`, `/sign-up*`, `/change-password*` and `/change-email*`. Every allowed request restarts the window. Storage is in memory, per isolate.
   - It is **on only when `NODE_ENV=production`**, which Workers don't set. Six rapid local sign-ins all returned 200.
   - **Inference:** it is off on deployed shops too. Don't count on it for brute-force protection.
 - **Better Auth Origin check:** sign-in and sign-up without a cookie only validate `Origin` when an `Origin`, `Referer` or `Sec-Fetch-*` header is present. With a cookie, `Origin` is required and must be trusted. The request's own origin is trusted, because we pass it as `baseURL`.
-- **Sign-in latency, local:** 38–59 ms wall clock per sign-in at 100,000 iterations. This is not Workers CPU time.
 
-**Pending: a human must click the Deploy button and report:**
-- the resource names it actually created;
-- whether R2 needs a dashboard opt-in on a fresh account;
-- whether the form prompts for `BETTER_AUTH_SECRET`;
+**Measured on a CLI deploy (2026-10-28, Free plan)**
+- **How it was deployed:** `wrangler deploy --secrets-file <tmp json>`, then `wrangler d1 migrations apply DB --remote`, from a non-interactive shell. The account's `workers.dev` subdomain already existed.
+- **Auto-provisioning:** created `open-shope-db` (D1) and `open-shope-media` (R2) with no prompts. Nothing in our setup enabled R2 in the dashboard beforehand. Whether a brand-new account needs the R2 checkout is still to be checked on a second account.
+- **Config:** no IDs were written back to `wrangler.jsonc`, so the committed config stays generic.
+- **Migrations:** in a non-interactive shell, `migrations apply` auto-confirms its prompt ("Using fallback value in non-interactive context: yes").
+- **Bundle:** 1.8 MB raw, 332 KB gzip (the Free limit is 3 MB compressed). Startup is 46–47 ms.
+- **`wrangler tail --format json` does include `cpuTime` and `wallTime` per request** (ms), although the real-time-logs docs don't show those fields. One run dropped 2 of about 41 events, so use it for CPU samples, not for counting requests.
+- **E2E against the deployed URL:**
+  - First deploy: 8/8 pass. The shop started fresh (`needsSetup: true`, then `false`), so the owner-creation branch ran.
+  - After the review fixes: 7 pass and 3 skip. The 3 skips are the fresh-shop tests; the "already set up" branch ran.
+- **CPU per request (ms):**
+
+  | Route | Better Auth built per request | Better Auth cached per isolate |
+  | --- | --- | --- |
+  | sign-in (PBKDF2, 100k) | 40–63, avg 50 (n=22) | 23–54, avg 33 (n=22) |
+  | sign-up | 50–122 (n=3) | 27–65 (n=3) |
+  | get-session, valid session | 14–19 (n=2) | 9–113, median 38 (n=15); about 9–11 on a warm isolate |
+  | `/api/setup`, `/api/health`, 404 (no Better Auth) | 0–9 | 0–3 |
+
+- **No request was cut off.** Every outcome was `ok`, with no 1102, including 22 sign-ins in a row at 2–6× the 10 ms budget. Free-plan enforcement is lenient in practice, but the docs promise only "occasional overages".
+- **Inference:**
+  - **PBKDF2 at 100k** costs about 20 ms of CPU by itself. Fitting 10 ms would take roughly 40k iterations or fewer. We keep 100k (the edge cap) for now, because sign-in and sign-up are rare per user. Revisit if 1102s appear; the Paid plan removes the concern.
+  - **Better Auth's per-request cost is the bigger issue.** It's about 10 ms on a warm isolate and up to about 110 ms on a cold one, on every request that calls it. At low traffic, most requests hit cold isolates. For high-traffic shopper routes (catalog, cart), consider a light session check: verify the signed session cookie with Web Crypto, plus one D1 lookup, instead of `auth.api.getSession`. Keep Better Auth for the `/api/auth/*` routes. Measure this in step 1.
+
+**Pending: a human clicks the Deploy button**
+- the names the button creates, and whether renaming the Worker renames them;
+- whether the form prompts for `BETTER_AUTH_SECRET` (from `.dev.vars.example` / `secrets.required`);
 - whether the button flow runs the `deploy` script, and so the migrations;
-- sign-in CPU per request (from `wrangler tail` or the dashboard), and whether 100,000 iterations stays under 10 ms. Run `BASE_URL=https://<shop> bun run test:e2e` **after** creating the owner. It records status and latency for 20 sign-ins in `e2e/artifacts/`.
+- whether R2 needs the dashboard checkout on a brand-new account.
 
 **Known risk: setup can be claimed by a stranger.** Whoever opens a fresh deployment first becomes the owner. Mitigation options (not built):
 - A `SETUP_TOKEN` secret, set at deploy, that the setup form requires.
