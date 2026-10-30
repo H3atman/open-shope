@@ -6,7 +6,10 @@ const app = new Hono<{ Bindings: Env }>();
 
 // Resolves to "ok" when the probe succeeds, "error" when it throws.
 const probe = (check: () => Promise<unknown>) =>
-  check().then(() => "ok" as const, () => "error" as const);
+  check().then(
+    () => "ok" as const,
+    () => "error" as const,
+  );
 
 // Checks both bindings; 503 names the binding that failed.
 app.get("/api/health", async (c) => {

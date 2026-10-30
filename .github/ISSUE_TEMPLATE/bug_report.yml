@@ -1,0 +1,37 @@
+name: Bug report
+description: Report something that does not work as expected.
+labels: ["bug", "needs-triage"]
+body:
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Where does it run?
+      options:
+        - Deployed
+        - Local
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (optional)
+      description: Remove secrets, credentials, and personal data before sharing.
+      render: text

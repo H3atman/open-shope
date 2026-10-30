@@ -29,7 +29,10 @@ export function postJson(path: string, body: unknown): Promise<Response> {
 
 // Turns a response's Set-Cookie headers into a Cookie request header.
 export function cookieFrom(res: Response): string {
-  return res.headers.getSetCookie().map((cookie) => cookie.split(";")[0]).join("; ");
+  return res.headers
+    .getSetCookie()
+    .map((cookie) => cookie.split(";")[0])
+    .join("; ");
 }
 
 // Reads the Better Auth session for a Cookie header; null when signed out.
