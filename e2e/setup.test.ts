@@ -56,13 +56,16 @@ test.skipIf(!fresh)("fresh shop: an existing customer email returns JSON 4xx and
 
 test.skipIf(!fresh)("fresh shop: concurrent setup creates exactly one owner, then returns 409", async () => {
   const owners = Array.from({ length: 5 }, () => newCredentials("E2E Owner"));
-  const responses = await Promise.all(owners.map((owner) => postJson("/api/setup", owner)));
-  const statuses = responses.map((res) => res.status);
+  const attempts = await Promise.all(
+    owners.map(async (owner) => ({ owner, res: await postJson("/api/setup", owner) })),
+  );
+  const statuses = attempts.map(({ res }) => res.status);
   expect(statuses.filter((status) => status === 201)).toHaveLength(1);
   expect(statuses.filter((status) => status === 409)).toHaveLength(4);
-  const winner = statuses.indexOf(201);
-  const session = await getSession(cookieFrom(responses[winner]!));
-  expect(session?.user.email).toBe(owners[winner]!.email);
+  const winner = attempts.find(({ res }) => res.status === 201);
+  if (!winner) throw new Error("No setup request returned 201");
+  const session = await getSession(cookieFrom(winner.res));
+  expect(session?.user.email).toBe(winner.owner.email);
   expect(session?.user.role).toBe("owner");
   expect(await needsSetup()).toBe(false);
   expect((await postJson("/api/setup", valid)).status).toBe(409);

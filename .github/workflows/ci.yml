@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bunx wrangler deploy --dry-run --outdir "$RUNNER_TEMP/dist"
+      - run: bun run test:e2e
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-artifacts
+          path: e2e/artifacts/
+          if-no-files-found: ignore

@@ -68,18 +68,31 @@ async function startLocalWorker(): Promise<LocalWorker> {
   };
 
   try {
-    const migrate = Bun.spawn(
-      [wrangler, "d1", "migrations", "apply", "DB", "--local", "--persist-to", state],
-      { cwd: root, env, stdout: Bun.file(log), stderr: Bun.file(log) },
-    );
+    const migrate = Bun.spawn([wrangler, "d1", "migrations", "apply", "DB", "--local", "--persist-to", state], {
+      cwd: root,
+      env,
+      stdout: Bun.file(log),
+      stderr: Bun.file(log),
+    });
     if ((await migrate.exited) !== 0) throw new Error("local migrations failed");
 
     const port = freePort();
     dev = Bun.spawn(
       [
-        wrangler, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port),
-        "--inspector-port", String(freePort()), "--persist-to", state,
-        "--env-file", secretsFile, "--show-interactive-dev-session=false",
+        wrangler,
+        "dev",
+        "--local",
+        "--ip",
+        "127.0.0.1",
+        "--port",
+        String(port),
+        "--inspector-port",
+        String(freePort()),
+        "--persist-to",
+        state,
+        "--env-file",
+        secretsFile,
+        "--show-interactive-dev-session=false",
       ],
       { cwd: root, env, detached: true, stdio: ["ignore", Bun.file(log), Bun.file(log)] },
     );
@@ -87,7 +100,11 @@ async function startLocalWorker(): Promise<LocalWorker> {
     await waitForWorker(url, dev);
     return { url, stop };
   } catch (error) {
-    console.error(await Bun.file(log).text().catch(() => ""));
+    console.error(
+      await Bun.file(log)
+        .text()
+        .catch(() => ""),
+    );
     await stop();
     throw error;
   }
@@ -109,9 +126,18 @@ try {
 
   const filters = process.argv.slice(2);
   const tests = Bun.spawn(
-    [process.execPath, "test", "--reporter=junit", `--reporter-outfile=${prefix}.junit.xml`,
-      ...(filters.length ? filters : ["./e2e"])],
-    { cwd: root, env: { ...process.env, BASE_URL: baseUrl, E2E_ARTIFACT_PREFIX: prefix }, stdio: ["inherit", "inherit", "inherit"] },
+    [
+      process.execPath,
+      "test",
+      "--reporter=junit",
+      `--reporter-outfile=${prefix}.junit.xml`,
+      ...(filters.length ? filters : ["./e2e"]),
+    ],
+    {
+      cwd: root,
+      env: { ...process.env, BASE_URL: baseUrl, E2E_ARTIFACT_PREFIX: prefix },
+      stdio: ["inherit", "inherit", "inherit"],
+    },
   );
   exitCode = await tests.exited;
   console.log(`E2E report: ${prefix}.junit.xml`);

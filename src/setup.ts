@@ -14,8 +14,9 @@ setup.get("/", async (c) => {
 // Creates the owner once and signs them in. The 'setup' settings row is an atomic claim:
 // only the request whose INSERT changes a row may continue; everyone else gets 409.
 setup.post("/", async (c) => {
-  const claim = await c.env.DB
-    .prepare(`INSERT INTO "settings" ("key", "value") VALUES ('setup', ?) ON CONFLICT DO NOTHING`)
+  const claim = await c.env.DB.prepare(
+    `INSERT INTO "settings" ("key", "value") VALUES ('setup', ?) ON CONFLICT DO NOTHING`,
+  )
     .bind(new Date().toISOString())
     .run();
   if (claim.meta.changes === 0) return c.json({ error: "Setup is already done" }, 409);
